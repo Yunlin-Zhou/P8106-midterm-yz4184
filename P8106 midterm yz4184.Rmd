@@ -1,0 +1,176 @@
+---
+title: "P8106 Midterm Project"
+author: "Yunlin Zhou"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+```{r, echo = FALSE, message = FALSE, results='hide', warning=FALSE}
+library(ggplot2)
+library(caret)
+library(glmnet)
+library(pROC)
+library(pdp)
+library(vip)
+library(AppliedPredictiveModeling)
+library(earth)
+library(tidyverse)
+library(patchwork)
+library(MASS)
+library(klaR)
+library(viridis)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      fig.width = 8,
+                      fig.height = 6,
+                      out.width = "90%")
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+```
+
+# Introdution
+
+## Motivation
+
+*Cardiovascular diseases* (CVDs) are the number 1 cause of death globally, taking an estimated 17.9 million lives each year, which accounts for 31% of all deaths worldwide. Using this [data set](https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction?select=heart.csv), we would like to explore how those features related to the heart disease thus we can use them to predict a possible heart disease.
+
+```{r, results='hide'}
+# import the data
+dat = read.csv("./heart.csv")%>%
+  janitor::clean_names()%>%
+  mutate(heart_disease = case_when(
+        heart_disease == 0 ~ "normal",
+        heart_disease == 1 ~"heart disease"))%>%
+  relocate(heart_disease)%>%
+  relocate(sex, chest_pain_type, resting_ecg,exercise_angina, st_slope, .after = last_col())
+```
+
+## Data preparation and cleaning
+
+As the table shows below, the data set has 11 predictor variables and 1 outcome variable(heart_disease), with 918 observations. When cleaning the data, we use factor() to change the type of character variable. There is no missing data in this data set. For better using this data set to train the models, we split the data set into two parts: training data (70%) and test data (30%).
+
+1. Age: age of the patient [years]
+2. Sex: sex of the patient [M: Male, F: Female]
+3. ChestPainType: chest pain type [TA: Typical Angina, ATA: Atypical Angina, NAP: Non-Anginal Pain, ASY: Asymptomatic]
+4. RestingBP: resting blood pressure [mm Hg]
+5. Cholesterol: serum cholesterol [mm/dl]
+6. FastingBS: fasting blood sugar [1: if FastingBS > 120 mg/dl, 0: otherwise]
+7. RestingECG: resting electrocardiogram results [Normal: Normal, ST: having ST-T wave abnormality (T wave inversions and/or ST elevation or depression of > 0.05 mV), LVH: showing probable or definite left ventricular hypertrophy by Estes' criteria]
+8. MaxHR: maximum heart rate achieved [Numeric value between 60 and 202]
+9. ExerciseAngina: exercise-induced angina [Y: Yes, N: No]
+10. Oldpeak: oldpeak = ST [Numeric value measured in depression]
+11. ST_Slope: the slope of the peak exercise ST segment [Up: upsloping, Flat: flat, Down: downsloping]
+12. HeartDisease: heart disease or Normal
+
+
+```{r}
+# using skim() to show the summary statistics about variables
+dat %>%
+skimr::skim()%>%
+knitr::knit_print()
+```
+
+```{r, results='hide'}
+# clean the data
+dat = dat %>%
+  mutate(
+    heart_disease = factor(heart_disease, levels = c("normal","heart disease" )),
+    sex = factor(sex, levels = c("F","M")),
+    chest_pain_type	 = factor(chest_pain_type, levels = c("TA", "ATA", "NAP", "ASY")),
+    resting_ecg = factor(resting_ecg, levels = c("Normal", "ST", "LVH")),
+    exercise_angina =factor(exercise_angina, levels = c("Y","N")),
+    st_slope = factor(st_slope, levels = c("Up","Flat","Down"))
+  )
+```
+
+```{r, results='hide'}
+# divide data into two parts (training and test)
+set.seed(1)
+rowTrain <- createDataPartition(y = dat$heart_disease,
+                                p = 0.7,
+                                list = FALSE)
+train_df = dat[rowTrain,]
+test_df = dat[-rowTrain,]
+```
+
+# Exploratory analysis/visualization
+
+## Graphical summaries of continous variables
+```{r warnings = FALSE, fig.height = 4}
+theme1 <- transparentTheme(trans = .4)
+trellis.par.set(theme1)
+
+featurePlot(x = dat[, 2:7], 
+            y = dat$heart_disease,
+            scales = list(x = list(relation = "free"), 
+                          y = list(relation = "free")),
+            plot = "density", pch = "|", 
+            auto.key = list(columns = 2))
+```
+
+From the density plot of continuous variables above, we can see that the some features like oldpeak, have differences between the normal and heart-diseased people. For the some other features like resting_bp, the difference is not significant.
+
+## Graphical summaries of catagorical variables
+
+```{r warnings = FALSE, fig.height = 6}
+p_sex = dat%>%
+  ggplot(aes(x = dat[,8], fill = heart_disease)) + 
+  geom_bar(stat = "count", 
+           position = position_dodge(),
+           alpha = 0.6)+ 
+  labs(
+    x = "Sex"
+  )
+
+p_chest = dat%>%
+  ggplot(aes(x = dat[,9], fill = heart_disease)) + 
+  geom_bar(stat = "count", 
+           position = position_dodge(),
+           alpha = 0.6)+ 
+  labs(
+    x = "Chest Pain Type"
+  )
+
+p_ecg = dat%>%
+  ggplot(aes(x = dat[,10], fill = heart_disease)) + 
+  geom_bar(stat = "count", 
+           position = position_dodge(),
+           alpha = 0.6)+ 
+  labs(
+    x = "Resting ECG"
+  )
+
+p_angina = dat%>%
+  ggplot(aes(x = dat[,11], fill = heart_disease)) + 
+  geom_bar(stat = "count", 
+           position = position_dodge(),
+           alpha = 0.6)+ 
+  labs(
+    x = "Exercise Angina"
+  )
+
+p_slope = dat%>%
+  ggplot(aes(x = dat[,12], fill = heart_disease)) + 
+  geom_bar(stat = "count", 
+           position = position_dodge(),
+           alpha = 0.6)+ 
+  labs(
+    x = "ST_Slope"
+  )
+
+grid.arrange(p_sex, p_chest, p_ecg, p_angina, p_slope, nrow = 3, top = "Graphical summaries of catagorical variables")
+```
+
+As we can see from the plot above: male are tending to have the heart disease; Even if the patient has some normal features , they could still have heart disease.
