@@ -18,6 +18,7 @@ library(tidyverse)
 library(patchwork)
 library(MASS)
 library(klaR)
+library(GGally)
 ```
 
 ```{r setup, include=FALSE}
@@ -179,11 +180,7 @@ As we can see from the plot above: male are tending to have the heart disease; i
 
 # Models
 
-Since our outcome is either having hear disease or not, we would use classification models including logistic regression, penalized logistic regression, GAM, MARS, LDA and QDA to train the data set.
-
-There is no tuning parameter for logistic, GAM, LDA and QDA model. 
-
- 
+Since our outcome is either having hear disease or not, we would use classification models including logistic regression, penalized logistic regression, GAM, MARS, LDA and QDA to train the data set. We use all the variables in the data set to fit the model.
 
 ```{r, results='hide'}
 # logistic regression
@@ -199,6 +196,17 @@ model.glm <- train(heart_disease ~ .,
 
 model.glm$finalModel
 ```
+
+As we can see from the Correlation plot below, we can conclude that age and max_hr, as well as age and oldpeak, are relatively highly correlated. 
+To fit logistic regression model, we need to make sure that the predictors are not correlated. Since age and oldpeak or max_hr are correlated, the result might be affected.
+
+```{r, fig.height = 1.5}
+p_correlation = dat %>%
+dplyr::select(-heart_disease) %>%
+ggcorr(label=TRUE, hjust = 0.9, layout.exp = 2, label_size = 3, label_round = 2)
+p_correlation
+```
+
 
 ```{r, results='hide'}
 # Penalized logistic regression
@@ -237,7 +245,7 @@ model.gam <- train(heart_disease ~ .,
 model.gam$finalModel
 ```
 
-
+For GAM model, we use GCV to select the degree of freedom. By looking at the formula in the final model, we can conclude that resting_bp is not an important predictor since its df is close to 0. The GAM model could automatically model non-linear relationships that standard linear regression will miss and potentially make more accurate predictions.
 
 ```{r, results='hide'}
 # MARS
@@ -285,7 +293,7 @@ model.qda$finalModel
 
 ## Find the best model
 
-To find the best fitting model, we need to compare the models with their AUC area and ROC. As the plot shows below, the MARS model has the largest AUC area and ROC, so we choose MARS model as the best fitting model.
+To find the best fitting model, we need to compare the models with their AUC . As the plot shows below, the MARS model has the largest AUC, so we choose MARS model as the best fitting model.
 
 ```{r, results='hide'}
 res <- resamples(list(GGLM = model.glm, 
