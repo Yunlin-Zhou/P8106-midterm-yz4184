@@ -18,26 +18,12 @@ library(tidyverse)
 library(patchwork)
 library(MASS)
 library(klaR)
-library(viridis)
 ```
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,
                       message = FALSE,
-                      warning = FALSE,
-                      fig.width = 8,
-                      fig.height = 6,
-                      out.width = "90%")
-
-options(
-  ggplot2.continuous.colour = "viridis",
-  ggplot2.continuous.fill = "viridis"
-)
-
-scale_colour_discrete = scale_colour_viridis_d
-scale_fill_discrete = scale_fill_viridis_d
-
-theme_set(theme_minimal() + theme(legend.position = "bottom"))
+                      warning = FALSE)
 ```
 
 # Introdution
@@ -79,7 +65,7 @@ As the table shows below, the data set has 11 predictor variables and 1 outcome 
 10. Oldpeak: oldpeak = ST [Numeric value measured in depression]
 11. ST_Slope: the slope of the peak exercise ST segment [Up: upsloping, Flat: flat, Down: downsloping]
 12. HeartDisease: heart disease or Normal
-
+\newpage
 
 ```{r}
 # using skim() to show the summary statistics about variables
@@ -112,10 +98,10 @@ rowTrain <- createDataPartition(y = dat$heart_disease,
 train_df = dat[rowTrain,]
 test_df = dat[-rowTrain,]
 ```
+\newpage
 
 # Exploratory analysis/visualization
 
-## Graphical summaries of continous variables
 ```{r warnings = FALSE, fig.height = 4}
 theme1 <- transparentTheme(trans = .4)
 trellis.par.set(theme1)
@@ -130,9 +116,7 @@ featurePlot(x = dat[, 2:6],
 
 From the density plot of continuous variables above, we can see that the some features like oldpeak, have differences between the normal and heart-diseased people. For the some other features like resting_bp, the difference is not significant.
 
-## Graphical summaries of catagorical variables
-
-```{r warnings = FALSE, fig.height = 6}
+```{r warnings = FALSE, fig.width = 8, fig.height = 4}
 p_sex = dat%>%
   ggplot(aes(x = dat[,7], fill = heart_disease)) + 
   geom_bar(stat = "count", 
@@ -187,7 +171,7 @@ p_slope = dat%>%
     x = "ST_Slope"
   )
 
-grid.arrange(p_sex, p_chest, p_ecg, p_bs, p_angina, p_slope, nrow = 3, top = "Graphical summaries of catagorical variables")
+grid.arrange(p_sex, p_chest, p_ecg, p_bs, p_angina, p_slope, ncol = 3, top = "Graphical summaries of catagorical variables")
 ```
 
 As we can see from the plot above: male are tending to have the heart disease; Even if the patient has some normal features , they could still have heart disease.
@@ -196,10 +180,8 @@ As we can see from the plot above: male are tending to have the heart disease; E
 
 Using the logistic regression, penalized logistic regression, GAM, MARS, LDA and QDA to train the data set.
 
-## logistic regression
-
-```{r}
-# Using caret
+```{r, results='hide'}
+# logistic regression
 ctrl <- trainControl(method = "repeatedcv",
                      summaryFunction = twoClassSummary,
                      classProbs = TRUE)
@@ -210,6 +192,146 @@ model.glm <- train(heart_disease ~ .,
                    metric = "ROC",
                    trControl = ctrl)
 
-summary(model.glm)
+model.glm$finalModel
+```
+
+```{r, results='hide'}
+# Penalized logistic regression
+glmnGrid <- expand.grid(.alpha = seq(0, 1, length = 21),
+                        .lambda = exp(seq(-3, 2, length = 50)))
+set.seed(1)
+model.glmn <- train(heart_disease ~ .,
+                  data = train_df,
+                    method = "glmnet",
+                    tuneGrid = glmnGrid,
+                    metric = "ROC",
+                    trControl = ctrl)
+
+model.glmn$bestTune
+```
+
+
+```{r, results='hide'}
+myCol<- rainbow(25)
+myPar <- list(superpose.symbol = list(col = myCol),
+              superpose.line = list(col = myCol))
+
+p_glmn = plot(model.glmn, par.settings = myPar, xTrans = function(x) log(x))
+```
+
+```{r, results='hide'}
+# GAM
+set.seed(1)
+model.gam <- train(heart_disease ~ .,
+                  data = train_df,
+                   method = "gam",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+model.gam$finalModel
+```
+
+```{r, results='hide'}
+# MARS
+set.seed(1)
+model.mars <- train(heart_disease ~ .,
+                  data = train_df,
+                    method = "earth",
+                    tuneGrid = expand.grid(degree = 1:4, 
+                                           nprune = 5:20),
+                    metric = "ROC",
+                    trControl = ctrl)
+
+model.mars$bestTune
+```
+
+```{r, results='hide'}
+p_mars = plot(model.mars)
+```
+
+```{r, results='hide'}
+# LDA
+set.seed(1)
+model.lda = train(heart_disease ~ .,
+                  data = train_df,
+                  method = "lda",
+                  metric = "ROC",
+                  trControl = ctrl)
+
+model.lda$finalmodel
+```
+
+```{r, results='hide'}
+# QDA
+set.seed(1)
+model.qda <- train(heart_disease ~ .,
+                  data = train_df,
+                   method = "qda",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+model.qda$finalModel
+```
+
+```{r, fig.width = 8, fig.height = 4}
+grid.arrange(p_glmn,p_mars, ncol = 2)
+```
+
+## find the best model
+
+```{r, results='hide'}
+res <- resamples(list(GGLM = model.glm, 
+                      GLMNET = model.glmn, 
+                      GAM = model.gam,
+                      MARS = model.mars,
+                      LDA = model.lda,
+                      QDA = model.qda))
+summary(res)
+```
+
+
+```{r, results='hide'}
+p_box = bwplot(res, metric = "ROC")
+```
+
+```{r, results='hide'}
+glm.pred <- predict(model.glm, newdata = test_df, type = "prob")[,2]
+glmn.pred <- predict(model.glmn, newdata = test_df, type = "prob")[,2]
+gam.pred <- predict(model.gam, newdata = test_df, type = "prob")[,2]
+mars.pred <- predict(model.mars, newdata = test_df, type = "prob")[,2]
+lda.pred <- predict(model.lda, newdata = test_df, type = "prob")[,2]
+qda.pred <- predict(model.qda, newdata = test_df, type = "prob")[,2]
+
+
+roc.glm <- roc(test_df$heart_disease, glm.pred)
+roc.glmn <- roc(test_df$heart_disease, glmn.pred)
+roc.gam <- roc(test_df$heart_disease, gam.pred)
+roc.mars <- roc(test_df$heart_disease, mars.pred)
+roc.lda <- roc(test_df$heart_disease, lda.pred)
+roc.qda <- roc(test_df$heart_disease, qda.pred)
+
+auc <- c(roc.glm$auc[1], roc.glmn$auc[1], 
+         roc.gam$auc[1], roc.mars$auc[1],
+         roc.lda$auc[1], roc.qda$auc[1])
+
+modelNames <- c("glm","glmn","gam","mars","lda", "qda")
+```
+
+
+```{r, results='hide'}
+p_auc = ggroc(list(roc.glm, roc.glmn, roc.gam, roc.mars,roc.lda, roc.qda), legacy.axes = TRUE) + 
+  scale_color_discrete(labels = paste0(modelNames, " (", round(auc,3),")"),
+                       name = "Models (AUC)") +
+  geom_abline(intercept = 0, slope = 1, color = "grey")
+```
+
+```{r, fig.width = 10, fig.height = 4}
+grid.arrange(p_auc,p_box, ncol = 2)
+```
+
+## Feature Importance based on MARS model
+
+```{r,fig.height = 4}
+vip(model.mars$finalModel)
 ```
 
