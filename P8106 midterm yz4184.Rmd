@@ -30,7 +30,7 @@ knitr::opts_chunk$set(echo = FALSE,
 
 ## Motivation
 
-*Cardiovascular diseases* (CVDs) are the number 1 cause of death globally, taking an estimated 17.9 million lives each year, which accounts for 31% of all deaths worldwide. Using this [data set](https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction?select=heart.csv), we would like to explore how those features related to the heart disease thus we can use them to predict a possible heart disease.
+*Cardiovascular diseases* (CVDs) are the number 1 cause of death globally, taking an estimated 17.9 million lives each year, which accounts for 31% of all deaths worldwide. Through this [data set](https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction?select=heart.csv), we would like to explore how those features related to the heart disease, thus we can further use them to predict a possible heart disease.
 
 ```{r, results='hide'}
 # import the data
@@ -46,12 +46,11 @@ dat = read.csv("./heart.csv")%>%
   relocate(heart_disease)%>%
   relocate(sex, chest_pain_type, fasting_bs, resting_ecg,exercise_angina, st_slope, .after = last_col())
 dat$cholesterol[dat$cholestero== 0] = NA
-
 ```
 
 ## Data preparation and cleaning
 
-As the table shows below, the data set has 11 predictor variables and 1 outcome variable(heart_disease), with 918 observations. When cleaning the data, using factor() to change the type of character variable. There is no null value in the original data set. However, some observations of Cholesterol is 0, which is not possible. We assume that those Cholesterol = 0 rows are actually null value at first. When cleaning the data, we use mean value to replace the null oberservation. For better using this data set to train the models, spliting the data set into two parts: training data (70%) and test data (30%).
+The variables in our data set are below: 
 
 1. Age: age of the patient [years]
 2. Sex: sex of the patient [M: Male, F: Female]
@@ -64,7 +63,7 @@ As the table shows below, the data set has 11 predictor variables and 1 outcome 
 9. ExerciseAngina: exercise-induced angina [Y: Yes, N: No]
 10. Oldpeak: oldpeak = ST [Numeric value measured in depression]
 11. ST_Slope: the slope of the peak exercise ST segment [Up: upsloping, Flat: flat, Down: downsloping]
-12. HeartDisease: heart disease or Normal
+12. HeartDisease: disease or normal
 \newpage
 
 ```{r}
@@ -73,6 +72,8 @@ dat %>%
 skimr::skim()%>%
 knitr::knit_print()
 ```
+
+As the table shows above, the data set has 7 character variables, 5 numeric variables, with 918 observations. In the original data set, there was no null observations, but we found out that some data of Cholesterol was 0, which is not possible in real life. So we assume that those Cholesterol = 0 rows were actually null value when collecting the data. In that case, we use the mean value to replace the null observations. For the character variables, we use the function `factor()` to change the data type so that we could apply the data set to the models. For better using this data set to train the models, we split the data set into two parts: training data (70%) and test data (30%).
 
 ```{r, results='hide'}
 # clean the data
@@ -98,7 +99,7 @@ rowTrain <- createDataPartition(y = dat$heart_disease,
 train_df = dat[rowTrain,]
 test_df = dat[-rowTrain,]
 ```
-\newpage
+
 
 # Exploratory analysis/visualization
 
@@ -114,9 +115,9 @@ featurePlot(x = dat[, 2:6],
             auto.key = list(columns = 2))
 ```
 
-From the density plot of continuous variables above, we can see that the some features like oldpeak, have differences between the normal and heart-diseased people. For the some other features like resting_bp, the difference is not significant.
+From the density plot of continuous variables above, we can see that most features have significant differences between the normal and heart-diseased people. The normal people are tending to have higher maximum heart rate; younger people are less likely to have heart disease; normal people have larger chances to have 0 oldpeak; the diseased people's cholesterol are more concentrated  between 200 - 300. But for the feature resting_bp, the difference is not significant.
 
-```{r warnings = FALSE, fig.width = 8, fig.height = 4}
+```{r warnings = FALSE, fig.width = 9, fig.height = 4}
 p_sex = dat%>%
   ggplot(aes(x = dat[,7], fill = heart_disease)) + 
   geom_bar(stat = "count", 
@@ -174,11 +175,15 @@ p_slope = dat%>%
 grid.arrange(p_sex, p_chest, p_ecg, p_bs, p_angina, p_slope, ncol = 3, top = "Graphical summaries of catagorical variables")
 ```
 
-As we can see from the plot above: male are tending to have the heart disease; Even if the patient has some normal features , they could still have heart disease.
+As we can see from the plot above: male are tending to have the heart disease; if the patients have Exercise Angina or flat ST slope, they are more likely to have heart disease. However, even if the patient has normal features like no chest pain, normal resting ECG and blood sugar, they could still have heart disease.
 
 # Models
 
-Using the logistic regression, penalized logistic regression, GAM, MARS, LDA and QDA to train the data set.
+Since our outcome is either having hear disease or not, we would use classification models including logistic regression, penalized logistic regression, GAM, MARS, LDA and QDA to train the data set.
+
+There is no tuning parameter for logistic, GAM, LDA and QDA model. 
+
+ 
 
 ```{r, results='hide'}
 # logistic regression
@@ -206,17 +211,18 @@ model.glmn <- train(heart_disease ~ .,
                     tuneGrid = glmnGrid,
                     metric = "ROC",
                     trControl = ctrl)
-
-model.glmn$bestTune
 ```
 
+For penalized logistic regression, the best tuning parameters are alpha = 0.1 and lambda = 0.06105877. The plot below shows that the highest point is the best tuning parameter selection.
 
-```{r, results='hide'}
+```{r, fig.height = 3}
+model.glmn$bestTune
 myCol<- rainbow(25)
 myPar <- list(superpose.symbol = list(col = myCol),
               superpose.line = list(col = myCol))
 
 p_glmn = plot(model.glmn, par.settings = myPar, xTrans = function(x) log(x))
+p_glmn
 ```
 
 ```{r, results='hide'}
@@ -231,6 +237,8 @@ model.gam <- train(heart_disease ~ .,
 model.gam$finalModel
 ```
 
+
+
 ```{r, results='hide'}
 # MARS
 set.seed(1)
@@ -241,12 +249,14 @@ model.mars <- train(heart_disease ~ .,
                                            nprune = 5:20),
                     metric = "ROC",
                     trControl = ctrl)
-
-model.mars$bestTune
 ```
 
-```{r, results='hide'}
+For MARS model, the best tuning parameters are nprune = 11 and degree = 1. The plot below shows that the highest point is the best tuning parameter selection.
+
+```{r, fig.height = 3}
+model.mars$bestTune
 p_mars = plot(model.mars)
+p_mars
 ```
 
 ```{r, results='hide'}
@@ -258,7 +268,7 @@ model.lda = train(heart_disease ~ .,
                   metric = "ROC",
                   trControl = ctrl)
 
-model.lda$finalmodel
+model.lda$finalModel
 ```
 
 ```{r, results='hide'}
@@ -273,11 +283,9 @@ model.qda <- train(heart_disease ~ .,
 model.qda$finalModel
 ```
 
-```{r, fig.width = 8, fig.height = 4}
-grid.arrange(p_glmn,p_mars, ncol = 2)
-```
+## Find the best model
 
-## find the best model
+To find the best fitting model, we need to compare the models with their AUC area and ROC. As the plot shows below, the MARS model has the largest AUC area and ROC, so we choose MARS model as the best fitting model.
 
 ```{r, results='hide'}
 res <- resamples(list(GGLM = model.glm, 
@@ -326,7 +334,7 @@ p_auc = ggroc(list(roc.glm, roc.glmn, roc.gam, roc.mars,roc.lda, roc.qda), legac
 ```
 
 ```{r, fig.width = 10, fig.height = 4}
-grid.arrange(p_auc,p_box, ncol = 2)
+grid.arrange(p_box, p_auc, ncol = 2)
 ```
 
 ## Feature Importance based on MARS model
@@ -335,3 +343,8 @@ grid.arrange(p_auc,p_box, ncol = 2)
 vip(model.mars$finalModel)
 ```
 
+According to the vip plot, we can conclude that st_slopeUp, chest_pain_typeASY, sexM, oldpeak, fasting_bshigh, cholesterol, st_slopeFlat, exercise_anginaN are statistically significant.
+
+# Conclusions
+
+In the end, we choose the MARS model as our best fitting model because of its high sensitivity and specificity. When a patient has a up slope of the peak exercise ST segment, high old peak, high fasting blood sugar and cholesterol, we need to be more cautious since those features might suggest heart disease. Also, even though some patients have normal features, we might still need further test for accurate diagnoses.  
